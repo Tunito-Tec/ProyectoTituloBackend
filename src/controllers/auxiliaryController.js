@@ -1,22 +1,72 @@
 const Proceeding = require("../models/Proceeding");
 const User = require("../models/User");
 
+// @desc    Obtener detalle de un trámite específico (para auxiliar)
+// @route   GET /api/auxiliar/tramites/:id
+const getProceedingById = async (req, res) => {
+  try {
+    const proceeding = await Proceeding.findById(req.params.id)
+      .populate("cliente", "nombre email rut")
+      .populate("tipo", "nombre tipoId")
+      .populate("asignadoA", "nombre email rol")
+      .populate("historial.usuario", "nombre rol");
+
+    if (!proceeding) {
+      return res.status(404).json({
+        success: false,
+        message: "Trámite no encontrado",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: proceeding,
+    });
+  } catch (error) {
+    console.error("Error en getProceedingById:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 // @desc    Obtener trámites pendientes de revisión
 // @route   GET /api/auxiliar/tramites/pendientes
 const getPendingProceedings = async (req, res) => {
   try {
     const proceedings = await Proceeding.find({
-      estado: { $in: ["pendiente_revision_auxiliar", "borrador"] },
+      estado: { $in: ["pendiente_revision_auxiliar", "pendiente"] },
     })
       .populate("cliente", "nombre email rut")
+      .populate("tipo", "nombre tipoId")
       .sort("-createdAt");
+
+    // Transformar los datos para el frontend
+    const proceedingsFormateados = proceedings.map((proc) => {
+      const procObj = proc.toObject();
+
+      return {
+        _id: procObj._id,
+        tipoNombre: procObj.tipo?.nombre || procObj.tipoId || "Sin tipo",
+        clienteNombre: procObj.cliente?.nombre || "Cliente no especificado",
+        clienteEmail: procObj.cliente?.email,
+        clienteRut: procObj.cliente?.rut,
+        estado: procObj.estado,
+        fecha: procObj.createdAt,
+        tipoId: procObj.tipoId,
+        datosFormulario: procObj.datosFormulario,
+        documentos: procObj.documentos,
+      };
+    });
 
     res.json({
       success: true,
-      count: proceedings.length,
-      data: proceedings,
+      count: proceedingsFormateados.length,
+      data: proceedingsFormateados,
     });
   } catch (error) {
+    console.error("Error en getPendingProceedings:", error);
     res.status(500).json({ message: error.message });
   }
 };
@@ -30,14 +80,33 @@ const getAssignedProceedings = async (req, res) => {
       estado: { $ne: "completado" },
     })
       .populate("cliente", "nombre email rut")
+      .populate("tipo", "nombre tipoId")
       .sort("-updatedAt");
+
+    const proceedingsFormateados = proceedings.map((proc) => {
+      const procObj = proc.toObject();
+
+      return {
+        _id: procObj._id,
+        tipoNombre: procObj.tipo?.nombre || procObj.tipoId || "Sin tipo",
+        clienteNombre: procObj.cliente?.nombre || "Cliente no especificado",
+        clienteEmail: procObj.cliente?.email,
+        clienteRut: procObj.cliente?.rut,
+        estado: procObj.estado,
+        fecha: procObj.updatedAt,
+        tipoId: procObj.tipoId,
+        datosFormulario: procObj.datosFormulario,
+        documentos: procObj.documentos,
+      };
+    });
 
     res.json({
       success: true,
-      count: proceedings.length,
-      data: proceedings,
+      count: proceedingsFormateados.length,
+      data: proceedingsFormateados,
     });
   } catch (error) {
+    console.error("Error en getAssignedProceedings:", error);
     res.status(500).json({ message: error.message });
   }
 };
@@ -46,7 +115,7 @@ const getAssignedProceedings = async (req, res) => {
 // @route   PUT /api/auxiliar/tramites/:id/asignar
 const assignProceeding = async (req, res) => {
   try {
-    const { usuarioId, rol } = req.body; // rol puede ser 'auxiliar' o 'notario'
+    const { usuarioId, rol } = req.body;
 
     const proceeding = await Proceeding.findById(req.params.id);
     if (!proceeding) {
@@ -96,7 +165,7 @@ const reviewProceeding = async (req, res) => {
     if (aprobado) {
       proceeding.estado = "esperando_firma_cliente";
     } else {
-      proceeding.estado = "borrador";
+      proceeding.estado = "pendiente";
     }
 
     proceeding.historial.push({
@@ -134,7 +203,7 @@ const requestCorrections = async (req, res) => {
       return res.status(404).json({ message: "Trámite no encontrado" });
     }
 
-    proceeding.estado = "borrador";
+    proceeding.estado = "pendiente";
 
     proceeding.historial.push({
       accion: "CORRECCIONES_SOLICITADAS",
@@ -155,6 +224,7 @@ const requestCorrections = async (req, res) => {
 };
 
 module.exports = {
+  getProceedingById,
   getPendingProceedings,
   getAssignedProceedings,
   assignProceeding,

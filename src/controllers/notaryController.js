@@ -2,13 +2,11 @@ const Proceeding = require("../models/Proceeding");
 const User = require("../models/User");
 const crypto = require("crypto");
 
-// Simulación de conexión con HSM (Hardware Security Module)
-// En un entorno real, esto se conectaría con un dispositivo físico o servicio cloud
+// Simulación simplificada de HSM (Hardware Security Module)
 class HSMService {
   constructor() {
     this.connected = false;
     this.hsmSimulation = {
-      // Simula un certificado digital del notario
       certificado: {
         serialNumber: "1234567890ABCDEF",
         issuer: "CN=Autoridad Certificadora Notarial, C=CL",
@@ -20,7 +18,6 @@ class HSMService {
   }
 
   async connect() {
-    // Simular conexión con HSM
     return new Promise((resolve) => {
       setTimeout(() => {
         this.connected = true;
@@ -31,30 +28,20 @@ class HSMService {
   }
 
   async signDocument(documentHash, notarioId) {
-    if (!this.connected) {
-      await this.connect();
-    }
+    if (!this.connected) await this.connect();
 
-    // Simular firma digital usando RSA (en producción usarías el HSM real)
+    // Simular firma digital sin usar criptografía RSA
     return new Promise((resolve) => {
       setTimeout(() => {
-        // Crear una firma digital simulada
-        const sign = crypto.createSign("RSA-SHA256");
-        sign.update(documentHash);
-
-        // Simular una llave privada (en HSM real esto estaría protegido)
-        const privateKey = `-----BEGIN PRIVATE KEY-----
-MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC8Lc2VXvBrF9hJ
-... (esto es solo una simulación)
------END PRIVATE KEY-----`;
-
-        // En producción, esta operación ocurre dentro del HSM
-        const signature = sign.sign(privateKey, "base64");
-
-        // Obtener timestamp del servidor (en producción sería un timestamp cualificado)
         const timestamp = new Date().toISOString();
 
-        // Crear sello de tiempo (simulado)
+        // Generar una firma simulada basada en el hash y timestamp
+        const firmaSimulada = crypto
+          .createHash("sha256")
+          .update(documentHash + timestamp + notarioId)
+          .digest("hex");
+
+        const signature = `SIM_SIGNATURE_${firmaSimulada.substring(0, 20)}`;
         const timeStampToken = crypto
           .createHash("sha256")
           .update(timestamp + documentHash)
@@ -67,7 +54,7 @@ MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC8Lc2VXvBrF9hJ
           certificado: this.hsmSimulation.certificado,
           hashFirmado: documentHash,
         });
-      }, 1000); // Simular tiempo de procesamiento del HSM
+      }, 1000);
     });
   }
 
@@ -75,11 +62,9 @@ MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC8Lc2VXvBrF9hJ
     // Simular verificación de firma
     return new Promise((resolve) => {
       setTimeout(() => {
-        // En producción, esto verificaría la firma contra el certificado
-        const isValid = true; // Simular verificación exitosa
-
+        // En simulación, siempre es válida
         resolve({
-          isValid,
+          isValid: true,
           detalles: {
             hashVerificado: documentHash,
             fechaVerificacion: new Date().toISOString(),
@@ -91,36 +76,76 @@ MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC8Lc2VXvBrF9hJ
   }
 }
 
-// Instancia global del servicio HSM (singleton)
 const hsmService = new HSMService();
 
-// @desc    Obtener trámites pendientes de firma
+// @desc    Obtener trámites pendientes de firma del notario (para el listado)
 // @route   GET /api/notario/tramites/pendientes-firma
-const getProceedingsPendingSignature = async (req, res) => {
+const getPendingSignatures = async (req, res) => {
   try {
     const proceedings = await Proceeding.find({
-      estado: { $in: ["esperando_firma_notario", "esperando_firma_cliente"] },
+      estado: "esperando_firma_notario",
+      $or: [{ asignadoA: req.user._id }, { asignadoA: { $exists: false } }],
     })
       .populate("cliente", "nombre email rut")
-      .populate("asignadoA", "nombre email")
-      .sort("-updatedAt");
+      .populate("tipo", "nombre tipoId")
+      .sort("-createdAt");
 
-    // Separar por tipo de firma pendiente
-    const resultado = {
-      pendientesFirmaNotario: proceedings.filter(
-        (p) => p.estado === "esperando_firma_notario",
-      ),
-      pendientesFirmaCliente: proceedings.filter(
-        (p) => p.estado === "esperando_firma_cliente",
-      ),
-    };
+    const proceedingsFormateados = proceedings.map((proc) => {
+      const procObj = proc.toObject();
+      return {
+        _id: procObj._id,
+        tipo: procObj.tipo?.nombre || procObj.tipoId || "Sin tipo",
+        cliente: procObj.cliente,
+        estado: procObj.estado,
+        createdAt: procObj.createdAt,
+        tipoId: procObj.tipoId,
+        documentos: procObj.documentos,
+      };
+    });
 
     res.json({
       success: true,
-      data: resultado,
+      data: {
+        pendientesFirmaNotario: proceedingsFormateados,
+        total: proceedingsFormateados.length,
+      },
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error("Error en getPendingSignatures:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// @desc    Obtener detalle de un trámite específico (para notario)
+// @route   GET /api/notario/tramites/:id
+const getProceedingById = async (req, res) => {
+  try {
+    const proceeding = await Proceeding.findById(req.params.id)
+      .populate("cliente", "nombre email rut")
+      .populate("tipo", "nombre tipoId")
+      .populate("asignadoA", "nombre email rol")
+      .populate("historial.usuario", "nombre rol");
+
+    if (!proceeding) {
+      return res.status(404).json({
+        success: false,
+        message: "Trámite no encontrado",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: proceeding,
+    });
+  } catch (error) {
+    console.error("Error en getProceedingById:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
 
@@ -134,7 +159,6 @@ const signDocument = async (req, res) => {
       return res.status(404).json({ message: "Trámite no encontrado" });
     }
 
-    // Verificar que el trámite está en estado correcto
     if (proceeding.estado !== "esperando_firma_notario") {
       return res.status(400).json({
         message: "Este trámite no está listo para firma del notario",
@@ -142,10 +166,9 @@ const signDocument = async (req, res) => {
       });
     }
 
-    // Generar o usar hash existente
+    // Generar hash si no existe
     let documentHash = proceeding.hashDocumentoFinal;
     if (!documentHash) {
-      // Generar hash del contenido del trámite
       const documentContent = JSON.stringify({
         id: proceeding._id,
         tipo: proceeding.tipo,
@@ -162,13 +185,13 @@ const signDocument = async (req, res) => {
       proceeding.hashDocumentoFinal = documentHash;
     }
 
-    // Firmar con HSM
+    // Firmar con HSM (simulado)
     const firmaDigital = await hsmService.signDocument(
       documentHash,
       req.user._id,
     );
 
-    // Guardar información de la firma en el trámite
+    // Guardar información de la firma
     proceeding.firmaNotario = {
       firma: firmaDigital.signature,
       timestamp: firmaDigital.timestamp,
@@ -187,9 +210,6 @@ const signDocument = async (req, res) => {
     });
 
     await proceeding.save();
-
-    // Opcional: Enviar notificación al cliente
-    // await sendEmailNotification(proceeding.cliente.email, 'documento_firmado');
 
     res.json({
       success: true,
@@ -221,7 +241,6 @@ const signDocument = async (req, res) => {
 const validateMinuta = async (req, res) => {
   try {
     const { observaciones, aprobado } = req.body;
-
     const proceeding = await Proceeding.findById(req.params.id);
 
     if (!proceeding) {
@@ -274,14 +293,12 @@ const verifySignature = async (req, res) => {
         .json({ message: "Este trámite no tiene firma digital registrada" });
     }
 
-    // Verificar la firma usando el HSM
     const verificacion = await hsmService.verifySignature(
       proceeding.firmaNotario.hashFirmado,
       proceeding.firmaNotario.firma,
       proceeding.firmaNotario.certificado,
     );
 
-    // Verificar integridad del documento
     const documentContent = JSON.stringify({
       id: proceeding._id,
       tipo: proceeding.tipo,
@@ -320,35 +337,102 @@ const verifySignature = async (req, res) => {
   }
 };
 
+// @desc    Verificar integridad del documento (ANTES de firmar)
+// @route   POST /api/notario/tramites/:id/verificar-integridad
+const verifyIntegrity = async (req, res) => {
+  try {
+    const proceeding = await Proceeding.findById(req.params.id);
+
+    if (!proceeding) {
+      return res.status(404).json({
+        success: false,
+        message: "Trámite no encontrado",
+      });
+    }
+
+    // Verificar que el trámite tenga hash
+    if (!proceeding.hashDocumentoFinal) {
+      return res.status(400).json({
+        success: false,
+        message: "Este trámite no tiene un hash de integridad generado",
+      });
+    }
+
+    // Regenerar el hash del documento actual para comparar
+    const documentContent = JSON.stringify({
+      id: proceeding._id,
+      tipo: proceeding.tipo,
+      datos: proceeding.datosFormulario,
+      documentos: proceeding.documentos,
+      cliente: proceeding.cliente,
+      fechaFirmaCliente: proceeding.fechaFirmaCliente,
+    });
+
+    const currentHash = crypto
+      .createHash("sha256")
+      .update(documentContent)
+      .digest("hex");
+
+    const isIntegro = currentHash === proceeding.hashDocumentoFinal;
+
+    // También verificar si el documento ha sido firmado por el cliente
+    const clienteFirmo = !!proceeding.fechaFirmaCliente;
+
+    // Si el cliente ya firmó, permitir la firma aunque el hash sea diferente
+    const puedeFirmar = isIntegro || clienteFirmo;
+
+    res.json({
+      success: true,
+      data: {
+        isIntegro,
+        puedeFirmar,
+        hashActual: currentHash,
+        hashOriginal: proceeding.hashDocumentoFinal,
+        documentoModificado: !isIntegro,
+        clienteFirmo,
+        estado: proceeding.estado,
+      },
+      message: isIntegro
+        ? "✅ Documento íntegro - Puede firmar"
+        : clienteFirmo
+          ? "⚠️ El cliente ya firmó - Puede proceder con la firma"
+          : "❌ El documento ha sido modificado - No se puede firmar",
+    });
+  } catch (error) {
+    console.error("Error en verifyIntegrity:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// @desc    Obtener estadísticas del dashboard notarial
+// @route   GET /api/notario/dashboard/stats
 // @desc    Obtener estadísticas del dashboard notarial
 // @route   GET /api/notario/dashboard/stats
 const getNotaryStats = async (req, res) => {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    // Estadísticas en paralelo para mejor performance
     const [
       totalTramitesHoy,
       pendientesFirma,
+      documentosEntregables, // ← NUEVO
       tiempoPromedioResolucion,
       tramitesPorEstado,
       tramitesPorTipo,
     ] = await Promise.all([
-      // Trámites del día
+      Proceeding.countDocuments({ createdAt: { $gte: today, $lt: tomorrow } }),
+      Proceeding.countDocuments({ estado: "esperando_firma_notario" }),
       Proceeding.countDocuments({
-        createdAt: { $gte: today, $lt: tomorrow },
-      }),
-
-      // Pendientes de firma (notario)
-      Proceeding.countDocuments({
-        estado: "esperando_firma_notario",
-      }),
-
-      // Tiempo promedio de resolución (en horas)
+        estado: "completado",
+        // Opcional: filtrar por notario actual
+        $or: [{ asignadoA: req.user._id }, { asignadoA: { $exists: false } }],
+      }), // ← Documentos listos para entregar
       Proceeding.aggregate([
         {
           $match: {
@@ -361,38 +445,17 @@ const getNotaryStats = async (req, res) => {
             tiempoResolucion: {
               $divide: [
                 { $subtract: ["$fechaFirmaNotario", "$createdAt"] },
-                3600000, // convertir milisegundos a horas
+                3600000,
               ],
             },
           },
         },
-        {
-          $group: {
-            _id: null,
-            promedio: { $avg: "$tiempoResolucion" },
-          },
-        },
+        { $group: { _id: null, promedio: { $avg: "$tiempoResolucion" } } },
       ]),
-
-      // Conteo por estado
       Proceeding.aggregate([
-        {
-          $group: {
-            _id: "$estado",
-            count: { $sum: 1 },
-          },
-        },
+        { $group: { _id: "$estado", count: { $sum: 1 } } },
       ]),
-
-      // Conteo por tipo de trámite
-      Proceeding.aggregate([
-        {
-          $group: {
-            _id: "$tipo",
-            count: { $sum: 1 },
-          },
-        },
-      ]),
+      Proceeding.aggregate([{ $group: { _id: "$tipo", count: { $sum: 1 } } }]),
     ]);
 
     res.json({
@@ -400,6 +463,7 @@ const getNotaryStats = async (req, res) => {
       data: {
         tramitesHoy: totalTramitesHoy,
         pendientesFirma: pendientesFirma,
+        documentosEntregables: documentosEntregables, // ← NUEVO
         tiempoPromedioHoras: Math.round(
           tiempoPromedioResolucion[0]?.promedio || 0,
         ),
@@ -418,14 +482,524 @@ const getNotaryStats = async (req, res) => {
       },
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error("Error en getNotaryStats:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// @desc    Generar copia para el cliente (no editable)
+// @route   GET /api/tramites/:id/copia-cliente
+// @desc    Generar copia para el cliente (no editable)
+// @route   GET /api/tramites/:id/copia-cliente
+// @desc    Generar copia para el cliente (no editable)
+// @route   GET /api/notario/tramites/:id/copia-cliente
+// ─────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────
+
+const fmtDate = (d) =>
+  d ? new Date(d).toLocaleDateString("es-CL") : "No disponible";
+
+const fmtDateTime = (d) =>
+  d ? new Date(d).toLocaleString("es-CL") : "No disponible";
+
+/** Genera un CSV tipo "A3F8-C2D9-1E4B" a partir del trámite */
+const buildCSV = (proceeding) =>
+  crypto
+    .createHash("sha256")
+    .update(
+      proceeding._id.toString() +
+        (proceeding.hashDocumentoFinal || "") +
+        Date.now(),
+    )
+    .digest("hex")
+    .substring(0, 16)
+    .toUpperCase()
+    .match(/.{1,4}/g)
+    .join("-");
+
+/** Intenta cargar pdfkit y qrcode; lanza si no están instalados */
+const loadDeps = () => {
+  try {
+    return {
+      PDFDocument: require("pdfkit"),
+      QRCode: require("qrcode"),
+    };
+  } catch {
+    throw new Error(
+      "Dependencias faltantes. Ejecute: npm install pdfkit qrcode",
+    );
+  }
+};
+
+// ─────────────────────────────────────────────────────────────
+// Secciones del PDF
+// ─────────────────────────────────────────────────────────────
+
+/** Marca de agua diagonal en toda la página */
+const drawWatermark = (doc) => {
+  doc.save();
+  doc
+    .fontSize(60)
+    .fillColor("#f0f0f0")
+    .rotate(-45, { origin: [doc.page.width / 2, doc.page.height / 2] })
+    .text(
+      "COPIA PARA EL CLIENTE",
+      doc.page.width / 2 - 200,
+      doc.page.height / 2 - 50,
+      {
+        width: 400,
+        align: "center",
+      },
+    )
+    .rotate(45, { origin: [doc.page.width / 2, doc.page.height / 2] });
+  doc.restore();
+};
+
+/** Encabezado con logo, título y línea separadora */
+const drawHeader = (doc) => {
+  doc
+    .fontSize(20)
+    .font("Helvetica-Bold")
+    .fillColor("#1e3c72")
+    .text("NOTARÍA DIGITAL", 50, 50);
+
+  doc
+    .fontSize(12)
+    .font("Helvetica")
+    .fillColor("#666")
+    .text("Documento con valor legal — Copia para el cliente", 50, 75);
+
+  doc
+    .strokeColor("#ccc")
+    .lineWidth(1)
+    .moveTo(50, 95)
+    .lineTo(doc.page.width - 50, 95)
+    .stroke();
+};
+
+/** Cuadro CSV + QR en la esquina superior derecha */
+const drawVerificationBox = (doc, csv, qrDataURL) => {
+  if (!qrDataURL) return;
+
+  const x = doc.page.width - 200;
+
+  doc.roundedRect(x, 50, 150, 120, 5).fillAndStroke("#f8f9fa", "#dee2e6");
+
+  doc
+    .fontSize(9)
+    .fillColor("#495057")
+    .text("CÓDIGO DE VERIFICACIÓN", x + 10, 60);
+  doc
+    .fontSize(14)
+    .font("Helvetica-Bold")
+    .fillColor("#1e3c72")
+    .text(csv, x + 10, 75);
+  doc
+    .fontSize(8)
+    .fillColor("#666")
+    .text("Guarde este código para verificar", x + 10, 100);
+  doc.image(qrDataURL, x + 10, 115, { width: 80, height: 80 });
+};
+
+/**
+ * Dibuja un bloque con título y lista de campos clave-valor.
+ * Devuelve la nueva posición Y.
+ */
+const drawSection = (doc, title, fields, y) => {
+  doc.fontSize(11).font("Helvetica-Bold").fillColor("#333").text(title, 50, y);
+  y += 20;
+
+  fields.forEach(({ label, value }) => {
+    doc
+      .font("Helvetica-Bold")
+      .fillColor("#555")
+      .text(`${label}`, 50, y, { continued: true });
+    doc
+      .font("Helvetica")
+      .fillColor("#333")
+      .text(` ${value || "No especificado"}`, { continued: false });
+    y += 20;
+  });
+
+  return y + 10;
+};
+
+/** Hash SHA-256 en fuente monospace */
+const drawHashSection = (doc, hash, y) => {
+  doc
+    .fontSize(11)
+    .font("Helvetica-Bold")
+    .fillColor("#333")
+    .text("HASH DE INTEGRIDAD (SHA-256)", 50, y);
+  y += 20;
+
+  doc
+    .font("Courier")
+    .fontSize(9)
+    .fillColor("#1e3c72")
+    .text(hash, 50, y, { width: doc.page.width - 100, align: "left" });
+
+  return y + 40;
+};
+
+/** Historial de acciones con formato de lista cronológica */
+const drawHistorial = (doc, historial, y) => {
+  doc
+    .fontSize(11)
+    .font("Helvetica-Bold")
+    .fillColor("#333")
+    .text("HISTORIAL DE ACCIONES", 50, y);
+  y += 20;
+
+  if (!historial?.length) {
+    doc
+      .font("Helvetica")
+      .fontSize(9)
+      .fillColor("#999")
+      .text("No hay historial disponible", 50, y);
+    return y + 20;
+  }
+
+  historial.forEach((item) => {
+    if (y > 750) {
+      doc.addPage();
+      y = 50;
+    }
+
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(10)
+      .fillColor("#1e3c72")
+      .text(item.accion, 50, y);
+    y += 15;
+
+    if (item.fecha) {
+      doc
+        .font("Helvetica")
+        .fontSize(9)
+        .fillColor("#666")
+        .text(fmtDateTime(item.fecha), 70, y);
+      y += 15;
+    }
+
+    if (item.detalles) {
+      doc
+        .font("Helvetica")
+        .fontSize(9)
+        .fillColor("#333")
+        .text(item.detalles, 70, y);
+      y += 15;
+    }
+
+    doc
+      .font("Helvetica-Oblique")
+      .fontSize(8)
+      .fillColor("#999")
+      .text(`Por: ${item.usuario?.nombre || "Sistema"}`, 70, y);
+
+    y += 25;
+  });
+
+  return y;
+};
+
+/** Bloque de firmas digitales */
+const drawSignatures = (doc, proceeding, y) => {
+  y = Math.max(y, 650);
+  if (y > 700) {
+    doc.addPage();
+    y = 50;
+  }
+
+  doc
+    .fontSize(11)
+    .font("Helvetica-Bold")
+    .fillColor("#333")
+    .text("FIRMAS DIGITALES", 50, y);
+  y += 30;
+
+  const drawSignRow = (label, fecha, notarioNombre) => {
+    doc.font("Helvetica").fontSize(10).fillColor("#333").text(label, 50, y);
+
+    if (fecha) {
+      doc.font("Helvetica-Bold").fillColor("#1e3c72").text("✓ FIRMADO", 150, y);
+      doc
+        .font("Helvetica")
+        .fontSize(9)
+        .fillColor("#666")
+        .text(fmtDateTime(fecha), 220, y);
+      y += fecha && notarioNombre ? 20 : 25;
+
+      if (notarioNombre) {
+        doc
+          .font("Helvetica-Oblique")
+          .fontSize(9)
+          .fillColor("#555")
+          .text(`Notario: ${notarioNombre}`, 150, y);
+        y += 25;
+      }
+    } else {
+      doc.font("Helvetica").fillColor("#999").text("Pendiente", 150, y);
+      y += 25;
+    }
+  };
+
+  drawSignRow("Firma del Cliente:", proceeding.fechaFirmaCliente, null);
+  drawSignRow(
+    "Firma del Notario:",
+    proceeding.fechaFirmaNotario,
+    proceeding.asignadoA?.nombre,
+  );
+
+  return y;
+};
+
+/** Pie de página fijo al fondo */
+const drawFooter = (doc, csv) => {
+  const h = doc.page.height;
+
+  doc
+    .strokeColor("#ccc")
+    .lineWidth(1)
+    .moveTo(50, h - 50)
+    .lineTo(doc.page.width - 50, h - 50)
+    .stroke();
+
+  doc
+    .fontSize(8)
+    .fillColor("#999")
+    .text(
+      "Este documento es una copia para el cliente. El original se encuentra en los archivos de la notaría.",
+      50,
+      h - 40,
+      { width: doc.page.width - 100, align: "center" },
+    );
+
+  doc
+    .fontSize(7)
+    .fillColor("#aaa")
+    .text(
+      `Generado el: ${fmtDateTime(new Date())}  —  CSV: ${csv}`,
+      50,
+      h - 25,
+      { width: doc.page.width - 100, align: "center" },
+    );
+};
+
+// ─────────────────────────────────────────────────────────────
+// Controller
+// ─────────────────────────────────────────────────────────────
+
+const generateClientCopy = async (req, res) => {
+  // 1. Cargar trámite
+  const proceeding = await Proceeding.findById(req.params.id)
+    .populate("cliente", "nombre rut email")
+    .populate("tipo", "nombre descripcion")
+    .populate("asignadoA", "nombre")
+    .populate("historial.usuario", "nombre");
+
+  if (!proceeding) {
+    return res
+      .status(404)
+      .json({ success: false, message: "Trámite no encontrado" });
+  }
+
+  if (proceeding.estado !== "completado") {
+    return res.status(400).json({
+      success: false,
+      message: "El trámite debe estar completado para generar la copia",
+    });
+  }
+
+  // 2. Cargar dependencias
+  let PDFDocument, QRCode;
+  try {
+    ({ PDFDocument, QRCode } = loadDeps());
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+
+  // 3. Generar y persistir CSV
+  const csv = buildCSV(proceeding);
+  proceeding.csv = csv;
+  await proceeding.save();
+
+  // 4. Generar QR
+  const qrData = JSON.stringify({
+    csv,
+    id: proceeding._id,
+    fecha: proceeding.fechaFirmaNotario,
+    hash: proceeding.hashDocumentoFinal?.substring(0, 10),
+  });
+
+  let qrDataURL = null;
+  try {
+    qrDataURL = await QRCode.toDataURL(qrData, { width: 150, margin: 1 });
+  } catch {
+    /* QR opcional — continúa sin él */
+  }
+
+  // 5. Configurar respuesta
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename=documento-${proceeding._id.toString().slice(-6)}.pdf`,
+  );
+
+  // 6. Construir PDF
+  const doc = new PDFDocument({
+    size: "A4",
+    margins: { top: 50, bottom: 50, left: 50, right: 50 },
+    info: {
+      Title: `Documento Notarial — ${proceeding.tipo?.nombre || "Trámite"}`,
+      Author: "Sistema Notarial",
+      Subject: "Copia para el Cliente",
+      Keywords: "notaría, documento, firma digital",
+      CreationDate: new Date(),
+    },
+  });
+
+  doc.pipe(res);
+
+  try {
+    drawWatermark(doc);
+    drawHeader(doc);
+    drawVerificationBox(doc, csv, qrDataURL);
+
+    let y = 130;
+
+    // Título
+    doc
+      .fontSize(16)
+      .font("Helvetica-Bold")
+      .fillColor("#1e3c72")
+      .text("DOCUMENTO NOTARIAL", 50, y);
+    y += 25;
+
+    // Sección: Información del trámite
+    y = drawSection(
+      doc,
+      "INFORMACIÓN DEL TRÁMITE",
+      [
+        { label: "Tipo de trámite:", value: proceeding.tipo?.nombre },
+        { label: "ID del documento:", value: proceeding._id.toString() },
+        { label: "Fecha de inicio:", value: fmtDate(proceeding.createdAt) },
+        {
+          label: "Fecha de firma:",
+          value: fmtDate(proceeding.fechaFirmaNotario),
+        },
+        { label: "Estado:", value: "COMPLETADO" },
+      ],
+      y,
+    );
+
+    // Sección: Datos del cliente
+    if (proceeding.cliente) {
+      y = drawSection(
+        doc,
+        "DATOS DEL CLIENTE",
+        [
+          { label: "Nombre:", value: proceeding.cliente.nombre },
+          { label: "RUT:", value: proceeding.cliente.rut },
+          { label: "Email:", value: proceeding.cliente.email },
+        ],
+        y,
+      );
+    }
+
+    // Sección: Datos del formulario
+    const datosEntries = Object.entries(proceeding.datosFormulario || {});
+    if (datosEntries.length) {
+      y = drawSection(
+        doc,
+        "DATOS INGRESADOS",
+        datosEntries.map(([k, v]) => ({
+          label: `${k.replace(/_/g, " ")}:`,
+          value: v,
+        })),
+        y,
+      );
+    }
+
+    // Hash de integridad
+    if (proceeding.hashDocumentoFinal) {
+      if (y > 700) {
+        doc.addPage();
+        y = 50;
+      }
+      y = drawHashSection(doc, proceeding.hashDocumentoFinal, y);
+    }
+
+    // Historial
+    if (y > 700) {
+      doc.addPage();
+      y = 50;
+    }
+    y = drawHistorial(doc, proceeding.historial, y);
+
+    // Firmas
+    drawSignatures(doc, proceeding, y);
+
+    // Pie de página
+    drawFooter(doc, csv);
+  } catch (pdfError) {
+    // El PDF puede estar parcialmente escrito — solo se registra el error
+    console.error("Error generando contenido del PDF:", pdfError);
+  }
+
+  doc.end();
+};
+
+// @desc    Obtener trámites completados (listos para entrega)
+// @route   GET /api/notario/tramites/completados
+const getCompletedProceedings = async (req, res) => {
+  try {
+    const proceedings = await Proceeding.find({
+      estado: "completado",
+      $or: [{ asignadoA: req.user._id }, { asignadoA: { $exists: false } }],
+    })
+      .populate("cliente", "nombre email rut")
+      .populate("tipo", "nombre tipoId")
+      .sort("-fechaFirmaNotario");
+
+    const proceedingsFormateados = proceedings.map((proc) => {
+      const procObj = proc.toObject();
+      return {
+        _id: procObj._id,
+        tipo: procObj.tipo,
+        cliente: procObj.cliente,
+        fechaFirmaNotario: procObj.fechaFirmaNotario,
+        csv: procObj.csv || "Por generar",
+        hashDocumentoFinal: procObj.hashDocumentoFinal,
+        documentos: procObj.documentos,
+      };
+    });
+
+    res.json({
+      success: true,
+      data: proceedingsFormateados,
+    });
+  } catch (error) {
+    console.error("Error en getCompletedProceedings:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
 
 module.exports = {
-  getProceedingsPendingSignature,
+  getPendingSignatures,
   signDocument,
   validateMinuta,
   verifySignature,
+  verifyIntegrity,
   getNotaryStats,
+  getProceedingById,
+  generateClientCopy,
+  getCompletedProceedings, // ← NUEVO
 };

@@ -7,6 +7,7 @@ const {
   assignProceeding,
   reviewProceeding,
   requestCorrections,
+  getProceedingById,
 } = require("../controllers/auxiliaryController");
 
 const router = express.Router();
@@ -14,6 +15,8 @@ const router = express.Router();
 // Todas las rutas requieren autenticación y rol de auxiliar o admin
 router.use(protect);
 router.use(authorize("auxiliar", "admin"));
+
+// ... después de las otras rutas
 
 // Dashboard y listados
 router.get("/tramites/pendientes", getPendingProceedings);
@@ -23,5 +26,7 @@ router.get("/tramites/asignados", getAssignedProceedings);
 router.put("/tramites/:id/asignar", assignProceeding);
 router.put("/tramites/:id/revisar", reviewProceeding);
 router.post("/tramites/:id/solicitar-correcciones", requestCorrections);
+
+router.get("/tramites/:id", getProceedingById);
 
 module.exports = router;

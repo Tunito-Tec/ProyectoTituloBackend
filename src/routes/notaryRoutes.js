@@ -2,11 +2,15 @@ const express = require("express");
 const { protect } = require("../middleware/authMiddleware");
 const { authorize } = require("../middleware/roleMiddleware");
 const {
-  getProceedingsPendingSignature,
+  getPendingSignatures,
   signDocument,
   validateMinuta,
+  verifyIntegrity,
   verifySignature,
   getNotaryStats,
+  getProceedingById, // ← Importar la función
+  generateClientCopy, // ← Importar la función
+  getCompletedProceedings,
 } = require("../controllers/notaryController");
 
 const router = express.Router();
@@ -18,12 +22,18 @@ router.use(authorize("notario", "admin"));
 // Dashboard
 router.get("/dashboard/stats", getNotaryStats);
 
-// Gestión de trámites
-router.get("/tramites/pendientes-firma", getProceedingsPendingSignature);
+// PRIMERO las rutas específicas (sin parámetros)
+router.get("/tramites/pendientes-firma", getPendingSignatures);
+router.get("/tramites/completados", getCompletedProceedings); // ← NUEVO
+
+// DESPUÉS las rutas con parámetros (/:id)
+router.get("/tramites/:id", getProceedingById);
 
 // Acciones de firma y validación
 router.post("/tramites/:id/validar-minuta", validateMinuta);
+router.post("/tramites/:id/verificar-integridad", verifyIntegrity); // ← NUEVA RUTA
 router.post("/tramites/:id/firmar", signDocument);
 router.post("/tramites/:id/verificar-firma", verifySignature);
-
+// En notaryRoutes.js, después de las otras rutas
+router.get("/tramites/:id/copia-cliente", generateClientCopy);
 module.exports = router;

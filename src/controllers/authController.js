@@ -95,7 +95,7 @@ const registerUser = async (req, res) => {
 // @desc    Autenticar usuario (login)
 const loginUser = async (req, res) => {
   try {
-    const { email, password } = req.body;S
+    const { email, password } = req.body;
 
     if (!email || !password) {
       return res

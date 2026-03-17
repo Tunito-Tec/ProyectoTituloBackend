@@ -2,20 +2,21 @@ const mongoose = require("mongoose");
 
 const proceedingSchema = new mongoose.Schema(
   {
+    // Cambiar para guardar la referencia al tipo de trámite
     tipo: {
+      type: mongoose.Schema.Types.ObjectId, // Cambiar a ObjectId
+      ref: "TramiteType", // Referencia al modelo TramiteType
+      required: true,
+    },
+    // Mantener el tipoId como campo separado para búsquedas rápidas
+    tipoId: {
       type: String,
       required: true,
-      enum: [
-        "poder_simple",
-        "compraventa",
-        "constitucion_sociedad",
-        "mandato_judicial",
-      ],
     },
     estado: {
       type: String,
       enum: [
-        "borrador",
+        "pendiente",
         "pendiente_revision_auxiliar",
         "en_revision",
         "esperando_firma_cliente",
@@ -23,7 +24,7 @@ const proceedingSchema = new mongoose.Schema(
         "completado",
         "rechazado",
       ],
-      default: "borrador",
+      default: "pendiente",
     },
     // Quién inició el trámite
     cliente: {

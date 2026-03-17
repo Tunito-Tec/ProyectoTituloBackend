@@ -3,11 +3,42 @@ const { protect } = require("../middleware/authMiddleware");
 const { authorize } = require("../middleware/roleMiddleware");
 const User = require("../models/User");
 const Proceeding = require("../models/Proceeding");
+// ==============================================
+// IMPORTAR CONTROLADOR DE TIPOS DE TRÁMITE
+// ==============================================
+const {
+  getActiveTramiteTypes,
+  createTramiteType,
+  updateTramiteType,
+  deleteTramiteType,
+} = require("../controllers/tramiteTypeController");
+
 const router = express.Router();
 
 // Todas las rutas requieren autenticación y rol de admin
 router.use(protect);
 router.use(authorize("admin"));
+
+// En adminRoutes.js, después de las importaciones, agrega:
+
+// @desc    Obtener TODOS los tipos de trámite (para admin, incluyendo inactivos)
+// @route   GET /api/admin/tipos-tramite
+router.get("/tipos-tramite", async (req, res) => {
+  try {
+    const tipos = await TramiteType.find().sort("-createdAt");
+    res.json({
+      success: true,
+      data: tipos,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Y mantén las otras rutas usando los controladores:
+router.post("/tipos-tramite", createTramiteType);
+router.put("/tipos-tramite/:id", updateTramiteType);
+router.delete("/tipos-tramite/:id", deleteTramiteType);
 
 // ==============================================
 // GESTIÓN DE USUARIOS
@@ -276,10 +307,30 @@ router.get("/stats", async (req, res) => {
 });
 
 // ==============================================
+// GESTIÓN DE TIPOS DE TRÁMITE (CRUD COMPLETO)
+// ==============================================
+
+// @desc    Obtener todos los tipos de trámite (para admin)
+// @route   GET /api/admin/tipos-tramite
+router.get("/tipos-tramite", getActiveTramiteTypes);
+
+// @desc    Crear un nuevo tipo de trámite
+// @route   POST /api/admin/tipos-tramite
+router.post("/tipos-tramite", createTramiteType);
+
+// @desc    Actualizar un tipo de trámite
+// @route   PUT /api/admin/tipos-tramite/:id
+router.put("/tipos-tramite/:id", updateTramiteType);
+
+// @desc    Eliminar un tipo de trámite
+// @route   DELETE /api/admin/tipos-tramite/:id
+router.delete("/tipos-tramite/:id", deleteTramiteType);
+
+// ==============================================
 // CONFIGURACIÓN DEL SISTEMA
 // ==============================================
 
-// @desc    Obtener tipos de trámite disponibles
+// @desc    Obtener tipos de trámite disponibles (configuración predefinida)
 // @route   GET /api/admin/config/tipos-tramite
 router.get("/config/tipos-tramite", (req, res) => {
   const tiposTramite = [
