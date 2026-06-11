@@ -1,23 +1,27 @@
-USUARIO: reparaciondetecnologias@gmail.com
-PW: coco1234
+ADMINISTRADOR
 
-USUARIO: francusantus@gmail.com
-PW: coco123
+Nombre completo:  TEST ADMIN
+GMAIL:TEST@ADMINNOTARIA.COM
+RUT: 42.145.145-2
+PW:TESTADMIN123
 
-USUARIO: juan@example.com
-PW: 123456
-ROLL: auxiliar
+NOTARIO
 
+Nombre completo:  TEST NOTARIO
+GMAIL:TEST@NOTARIO.COM
+RUT: 11.123.441-2
+PW: TESTNOTARIO123
 
-juan@example2.com
+AUXILIAR
 
+Nombre completo:  TEST AUXILIAR
+GMAIL: TEST@AUXILIAR.COM
+RUT: 33.231.464-2
+PW: TESTAUXILIAR123
 
-TIPOS DE USUARIOS:
-cliente, auxiliar, notario, admin
+CLIENTE
 
-https://notegpt.io/ai-models/claude-sonnet-4-5
-
-ngrok config add-authtoken 2ejRGeLLBf58Wx3Dx8stAlnBDo6_21oeN7gzS6VDTj1476fv
-
-
-pm2 start "ngrok http 8000 --url=unpessimistic-lane-exothermally.ngrok-free.dev --traffic-policy-file=/home/ubuntu/ngrok-policy.yml" --name ngrok --interpreter none
+Nombre completo:  TEST CLIENTE
+GMAIL: TEST@CLIENTE.COM
+RUT: 99.341.235-2
+PW: TESTCLIENTE123
