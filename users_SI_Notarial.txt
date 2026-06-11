@@ -1,0 +1,23 @@
+USUARIO: reparaciondetecnologias@gmail.com
+PW: coco1234
+
+USUARIO: francusantus@gmail.com
+PW: coco123
+
+USUARIO: juan@example.com
+PW: 123456
+ROLL: auxiliar
+
+
+juan@example2.com
+
+
+TIPOS DE USUARIOS:
+cliente, auxiliar, notario, admin
+
+https://notegpt.io/ai-models/claude-sonnet-4-5
+
+ngrok config add-authtoken 2ejRGeLLBf58Wx3Dx8stAlnBDo6_21oeN7gzS6VDTj1476fv
+
+
+pm2 start "ngrok http 8000 --url=unpessimistic-lane-exothermally.ngrok-free.dev --traffic-policy-file=/home/ubuntu/ngrok-policy.yml" --name ngrok --interpreter none
